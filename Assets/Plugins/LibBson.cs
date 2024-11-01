@@ -194,6 +194,10 @@ public static class LibBson
             {
                 case BSON_DOUBLE:
                     {
+                        if (offset + 8 > bufEnd)
+                        {
+                            throw new IndexOutOfRangeException("Buffer overrun while reading BSON_DOUBLE.");
+                        }
                         _content.doubleValue = BitConverter.ToDouble(buf, offset);
                         Notify(elemName, BSON_DOUBLE);
                         offset += 8;
@@ -201,7 +205,15 @@ public static class LibBson
                     break;
                 case BSON_STRING:
                     {
+                        if (offset + 4 > bufEnd)
+                        {
+                            throw new IndexOutOfRangeException("Buffer overrun while reading BSON_STRING length.");
+                        }
                         int stringLength = BitConverter.ToInt32(buf, offset);
+                        if (offset + 4 + stringLength > bufEnd)
+                        {
+                            throw new IndexOutOfRangeException("Buffer overrun while reading BSON_STRING value.");
+                        }
                         _content.stringLength = stringLength;
                         _content.stringValue = Encoding.UTF8.GetString(buf, offset + 4, stringLength - 1);
                         Notify(elemName, BSON_STRING);
@@ -210,7 +222,15 @@ public static class LibBson
                     break;
                 case BSON_DOCUMENT:
                     {
+                        if (offset + 4 > bufEnd)
+                        {
+                            throw new IndexOutOfRangeException("Buffer overrun while reading BSON_DOCUMENT size.");
+                        }
                         int documentSize = BitConverter.ToInt32(buf, offset);
+                        if (offset + documentSize > bufEnd)
+                        {
+                            throw new IndexOutOfRangeException("Buffer overrun while reading BSON_DOCUMENT content.");
+                        }
                         _content.documentSize = documentSize;
                         _content.documentName = elemName;
                         _content.nodeOffset = offset;
