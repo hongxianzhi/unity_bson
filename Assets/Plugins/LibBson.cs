@@ -160,7 +160,7 @@ public static class LibBson
         _content.documentRoot = true;
         Notify(docName, BSON_DOCUMENT);
         _content.documentRoot = false;
-        DoDecode(false);
+        DoDecode(null);
 
         _content.documentRoot = true;
         _content.documentSize = 0;
@@ -168,7 +168,7 @@ public static class LibBson
         _content.documentRoot = false;
     }
 
-    static void DoDecode(bool isArray)
+    static void DoDecode(string typeName)
     {
         byte[] buf = _content.buffer;
         int startIndex = _content.nodeOffset;
@@ -234,18 +234,14 @@ public static class LibBson
                         _content.documentSize = documentSize;
                         _content.documentName = elemName;
                         _content.nodeOffset = offset;
+                        _content.hierarchy = string.Format("{0}.{1}", hierarchy, string.IsNullOrEmpty(typeName) ? elemName : typeName);
                         Notify(elemName, BSON_DOCUMENT);
-
-                        if (!isArray)
-                        {
-                            _content.hierarchy = string.Format("{0}.{1}", hierarchy, elemName);
-                        }
-                        DoDecode(false);
+                        DoDecode(null);
 
                         offset += documentSize;
                         _content.documentSize = 0;
-                        _content.hierarchy = hierarchy;
                         Notify(elemName, BSON_DOCUMENT);
+                        _content.hierarchy = hierarchy;
                     }
                     break;
                 case BSON_ARRAY:
@@ -254,18 +250,14 @@ public static class LibBson
                         _content.documentSize = documentSize;
                         _content.documentName = elemName;
                         _content.nodeOffset = offset;
+                        _content.hierarchy = string.Format("{0}.{1}", hierarchy, string.IsNullOrEmpty(typeName) ? elemName : typeName);
                         Notify(elemName, BSON_ARRAY);
-
-                        if(!isArray)
-                        {
-                            _content.hierarchy = string.Format("{0}.{1}", hierarchy, elemName);
-                        }
-                        DoDecode(true);
+                        DoDecode("$_ARRAY_SUBITEM_");
 
                         offset += documentSize;
                         _content.documentSize = 0;
-                        _content.hierarchy = hierarchy;
                         Notify(elemName, BSON_ARRAY);
+                        _content.hierarchy = hierarchy;
                     }
                     break;
                 case BSON_BINARY:

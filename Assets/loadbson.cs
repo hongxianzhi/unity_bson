@@ -60,7 +60,7 @@ public class loadbson : MonoBehaviour
         jsonObject[name] = BitConverter.ToString(LibBson.ObjectId);
     }
 
-    static string Main(string bsonName, byte[] bsonData)
+    static void Main(string bsonName, byte[] bsonData)
     {
         //当前内存占用
         long startMemory = GC.GetTotalMemory(true);
@@ -169,13 +169,13 @@ public class loadbson : MonoBehaviour
         //溶剂内存占用
         long end1Memory = GC.GetTotalMemory(true);
 
+        File.WriteAllText("D:/" + bsonName + ".json", str);
+
         //在屏幕上输出 JSON 数据
-        string message = string.Format("解析时间:{0}ms, 转换时间:{1}ms, 内存增长:{2}KB, 内存增长:{3}KB", (t2 - t1) * 1000, (t3 - t2) * 1000, (endMemory - startMemory) / 1024, (end1Memory - endMemory) / 1024);
-        Debug.Log(message);
-        return message;
+        message += string.Format("{0} Parse:{1}ms, Convert:{2}ms, mem1:{3}KB, mem2:{4}KB\n", bsonName, (t2 - t1) * 1000, (t3 - t2) * 1000, (endMemory - startMemory) / 1024, (end1Memory - endMemory) / 1024);
     }
 
-    string message = "";
+    static string message = "";
     static bool fillJson = false;
     GUIStyle labelStype = new GUIStyle();
     void Start()
@@ -195,8 +195,13 @@ public class loadbson : MonoBehaviour
         }
         if(GUI.Button(new Rect(300, 400, 100, 100), "Click Me"))
         {
+            message = "";
             TextAsset binAsset = Resources.Load("RaidConfigCategory") as TextAsset;
-            message = Main("RaidConfigCategory", binAsset.bytes);
+            Main("RaidConfigCategory", binAsset.bytes);
+            binAsset = Resources.Load("RobotConfigCategory") as TextAsset;
+            Main("RobotConfigCategory", binAsset.bytes);
+            binAsset = Resources.Load("SensitiveWordConfigCategory") as TextAsset;
+            Main("SensitiveWordConfigCategory", binAsset.bytes);
         }
     }
 }
