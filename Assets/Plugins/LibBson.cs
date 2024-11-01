@@ -1,7 +1,8 @@
 using System;
 using System.Text;
+using System.Collections.Generic;
 
-public static class LibBson
+public class LibBson
 {
     public const byte BSON_DOUBLE = 0x01;
     public const byte BSON_STRING = 0x02;
@@ -32,6 +33,7 @@ public static class LibBson
         public bool documentRoot;               //是否为文档根节点
 
         public int nodeOffset;                  //数据偏移
+        public string eleName;                  //元素名称
 
         public int stringLength;
         public string stringValue;
@@ -46,102 +48,127 @@ public static class LibBson
         public int binarySubtype;
 
         public byte[] objectId;
-
-        public Object userData;
         public string hierarchy;
-        public Action<string, int> notify;
+        public Action<LibBson, int> notify;
+        public List<System.Object> documentStack;
+        public Dictionary<string, Dictionary<string, System.Action>> documentHandlers;
     }
-    static BsonContent _content = new BsonContent();
+    BsonContent _content = new BsonContent();
 
-    static LibBson()
+    public LibBson(string docName, byte[] buf, System.Action<LibBson, int> handler)
     {
         _content.objectId = new byte[12];
+        _content.documentStack = new List<System.Object>();
+        _content.buffer = buf;
+        _content.notify = handler;
+        _content.documentName = docName;
     }
 
-    public static bool IsDocumentRoot
+    System.Object _CurrentDocument;
+    public System.Object CurrentDocument
+    {
+        get
+        {
+            return _CurrentDocument;
+        }
+    }
+
+    public void PushDocument(System.Object doc)
+    {
+        if(doc == null)
+        {
+            throw new Exception("Document is null.");
+        }
+        _content.documentStack.Add(doc);
+        _CurrentDocument = doc;
+    }
+
+    public void PopDocument()
+    {
+        if(_content.documentStack.Count == 0)
+        {
+            throw new Exception("Document stack is empty.");
+        }
+        _content.documentStack.RemoveAt(_content.documentStack.Count - 1);
+        _CurrentDocument = _content.documentStack.Count == 0 ? null : _content.documentStack[_content.documentStack.Count - 1];
+    }
+
+    public bool IsDocumentRoot
     {
         get
         {
             return _content.documentRoot;
         }
     }
-    public static bool IsBeginParse
+    public bool IsEnter
     {
         get
         {
             return _content.documentSize > 0;
         }
     }
-    public static string Hierarchy
+    public string EleName
+    {
+        get { return _content.eleName; }
+    }
+    public string Hierarchy
     {
         get { return _content.hierarchy; }
     }
-    public static string DocumentName
+    public string DocumentName
     {
         get { return _content.documentName; }
     }
-    public static int DocumentSize
+    public int DocumentSize
     {
         get { return _content.documentSize; }
     }
-    public static int Int32Value
+    public int Int32Value
     {
         get { return _content.int32Value; }
     }
-    public static long Int64Value
+    public long Int64Value
     {
         get { return _content.int64Value; }
     }
-    public static double DoubleValue
+    public double DoubleValue
     {
         get { return _content.doubleValue; }
     }
-    public static string StringValue
+    public string StringValue
     {
         get { return _content.stringValue; }
     }
-    public static bool BooleanValue
+    public bool BooleanValue
     {
         get { return _content.booleanValue; }
     }
-    public static byte[] Buffer
+    public byte[] Buffer
     {
         get { return _content.buffer; }
     }
-    public static int BinaryStart
+    public int BinaryStart
     {
         get { return _content.binaryStart; }
     }
-    public static int BinaryLength
+    public int BinaryLength
     {
         get { return _content.binaryLength; }
     }
-    public static int BinarySubtype
+    public int BinarySubtype
     {
         get { return _content.binarySubtype; }
     }
-    public static byte[] ObjectId
+    public byte[] ObjectId
     {
         get { return _content.objectId; }
     }
 
-    public static System.Object UserData
-    {
-        get
-        {
-            return _content.userData;
-        }
-        set
-        {
-            _content.userData = value;
-        }
-    }
-
-    static void Notify(string name, int type)
+    void Notify(int type)
     {
         try
         {
-            _content.notify(name, type);
+            _content.notify(this, type);
         }
         catch (Exception e)
         {
@@ -149,26 +176,29 @@ public static class LibBson
         }
     }
 
-    public static void Decode(string docName, byte[] buf, System.Action<string, int> handler)
+    public void Decode()
     {
-        _content.buffer = buf;
-        _content.documentName = docName;
-        _content.notify = handler;
+        _CurrentDocument = null;
+        byte[] buf = _content.buffer;
+        string docName = _content.documentName;
+        _content.documentStack.Clear();
         _content.documentSize = BitConverter.ToInt32(buf, 0);
         _content.nodeOffset = 0;
         _content.hierarchy = docName;
         _content.documentRoot = true;
-        Notify(docName, BSON_DOCUMENT);
+        _content.eleName = docName;
+        Notify(BSON_DOCUMENT);
         _content.documentRoot = false;
         DoDecode(null);
 
         _content.documentRoot = true;
         _content.documentSize = 0;
-        Notify(docName, BSON_DOCUMENT);
+        _content.eleName = docName;
+        Notify(BSON_DOCUMENT);
         _content.documentRoot = false;
     }
 
-    static void DoDecode(string typeName)
+    void DoDecode(string typeName)
     {
         byte[] buf = _content.buffer;
         int startIndex = _content.nodeOffset;
@@ -187,9 +217,11 @@ public static class LibBson
 
             int nameEnd = Array.IndexOf(buf, (byte)0, offset);
             nameEnd = nameEnd == -1 ? bufEnd : nameEnd;
-            string elemName = Encoding.UTF8.GetString(buf, offset, nameEnd - offset);
+            string eleName = Encoding.UTF8.GetString(buf, offset, nameEnd - offset);
+            _content.eleName = eleName;
             offset = nameEnd + 1;
 
+            _content.hierarchy = string.Format("{0}.{1}", hierarchy, string.IsNullOrEmpty(typeName) ? eleName : typeName);
             switch (elemType)
             {
                 case BSON_DOUBLE:
@@ -199,7 +231,7 @@ public static class LibBson
                             throw new IndexOutOfRangeException("Buffer overrun while reading BSON_DOUBLE.");
                         }
                         _content.doubleValue = BitConverter.ToDouble(buf, offset);
-                        Notify(elemName, BSON_DOUBLE);
+                        Notify(BSON_DOUBLE);
                         offset += 8;
                     }
                     break;
@@ -216,7 +248,7 @@ public static class LibBson
                         }
                         _content.stringLength = stringLength;
                         _content.stringValue = Encoding.UTF8.GetString(buf, offset + 4, stringLength - 1);
-                        Notify(elemName, BSON_STRING);
+                        Notify(BSON_STRING);
                         offset += stringLength + 4;
                     }
                     break;
@@ -232,32 +264,28 @@ public static class LibBson
                             throw new IndexOutOfRangeException("Buffer overrun while reading BSON_DOCUMENT content.");
                         }
                         _content.documentSize = documentSize;
-                        _content.documentName = elemName;
                         _content.nodeOffset = offset;
-                        _content.hierarchy = string.Format("{0}.{1}", hierarchy, string.IsNullOrEmpty(typeName) ? elemName : typeName);
-                        Notify(elemName, BSON_DOCUMENT);
+                        Notify(BSON_DOCUMENT);
                         DoDecode(null);
 
                         offset += documentSize;
                         _content.documentSize = 0;
-                        Notify(elemName, BSON_DOCUMENT);
-                        _content.hierarchy = hierarchy;
+                        _content.eleName = eleName;
+                        Notify(BSON_DOCUMENT);
                     }
                     break;
                 case BSON_ARRAY:
                     {
                         int documentSize = BitConverter.ToInt32(buf, offset);
                         _content.documentSize = documentSize;
-                        _content.documentName = elemName;
                         _content.nodeOffset = offset;
-                        _content.hierarchy = string.Format("{0}.{1}", hierarchy, string.IsNullOrEmpty(typeName) ? elemName : typeName);
-                        Notify(elemName, BSON_ARRAY);
-                        DoDecode("$_ARRAY_SUBITEM_");
+                        Notify(BSON_ARRAY);
+                        DoDecode("$_CHILD_");
 
                         offset += documentSize;
                         _content.documentSize = 0;
-                        Notify(elemName, BSON_ARRAY);
-                        _content.hierarchy = hierarchy;
+                        _content.eleName = eleName;
+                        Notify(BSON_ARRAY);
                     }
                     break;
                 case BSON_BINARY:
@@ -270,35 +298,35 @@ public static class LibBson
                         offset += binLength;
                         _content.binaryLength = binLength;
                         _content.binarySubtype = subtype;
-                        Notify(elemName, BSON_BINARY);
+                        Notify(BSON_BINARY);
                     }
                     break;
                 case BSON_INT32:
                     {
                         _content.int32Value = BitConverter.ToInt32(buf, offset);
                         offset += 4;
-                        Notify(elemName, BSON_INT32);
+                        Notify(BSON_INT32);
                     }
                     break;
                 case BSON_INT64:
                     {
                         _content.int64Value = BitConverter.ToInt64(buf, offset);
                         offset += 8;
-                        Notify(elemName, BSON_INT64);
+                        Notify(BSON_INT64);
                     }
                     break;
                 case BSON_OBJECT_ID:
                     {
                         Array.Copy(buf, offset, _content.objectId, 0, 12);
                         offset += 12;
-                        Notify(elemName, BSON_OBJECT_ID);
+                        Notify(BSON_OBJECT_ID);
                     }
                     break;
                 case BSON_BOOLEAN:
                     {
                         _content.booleanValue = buf[offset] != 0;
                         offset++;
-                        Notify(elemName, BSON_BOOLEAN);
+                        Notify(BSON_BOOLEAN);
                     }
                     break;
                 case BSON_NULL:
@@ -306,7 +334,7 @@ public static class LibBson
                 default:
                     break;
             }
+            _content.hierarchy = hierarchy;
         }
-        _content.hierarchy = hierarchy;
     }
 }
